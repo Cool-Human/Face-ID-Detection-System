@@ -1,9 +1,10 @@
-# Real-time Face Detection (Haar cascades)
+# Real-time Face Detection
 
-This small project runs a webcam face detector using OpenCV's Haar cascades.
+This project provides two face detection implementations using OpenCV:
+- **Version 0**: Haar cascade classifiers (fast, lightweight, classical).
+- **Version 1**: YuNET DNN detector (modern, accurate, robust).
 
-Setup
------
+## Common Setup
 
 1. Create a virtual environment (recommended):
 
@@ -18,26 +19,102 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run
 ---
 
-From the `Face-ID` folder run:
+## Version 0: Haar Cascades (face_detection.py)
+
+### Run
+
+From the `Face-ID` folder:
 
 ```bash
 python3 face_detection.py
 ```
 
-Options
--------
+### Options
 
-- `--camera`: camera index (0 default)
-- `--scale`: scale factor for detection (default 1.1)
-- `--min-neighbors`: detection sensitivity (default 5)
-- `--min-size`: minimum face size in pixels (default 30)
+- `--camera`: Camera device index (default: 0)
+- `--scale`: Scale factor for detection (default: 1.1)
+- `--min-neighbors`: Detection sensitivity; higher = fewer false positives (default: 5)
+- `--min-size`: Minimum face size in pixels (default: 30)
+- `--width`: Optional camera frame width (default: 640)
+- `--height`: Optional camera frame height (default: 480)
 
-Notes
------
+### Notes
 
-- The script uses the built-in OpenCV haarcascade file via `cv2.data.haarcascades`.
+- Uses OpenCV's built-in Haar cascade via `cv2.data.haarcascades`.
+- Fast and lightweight; good for resource-constrained environments.
+- Sensitive to pose, occlusion, and extreme lighting conditions.
 - Allow camera access when prompted by your OS.
-- To use a different cascade, pass `--cascade` with the filename present in OpenCV's data folder or give a full path.
+
+### Example
+
+```bash
+python3 face_detection.py --scale 1.05 --min-neighbors 3 --min-size 50
+```
+
+---
+
+## Version 1: YuNET DNN (yunnet_face_detection_version_1.py)
+
+### Requirements
+
+YuNET requires **OpenCV >= 4.8.0**. Update if needed:
+
+```bash
+pip install --upgrade opencv-python
+```
+
+### Run
+
+From the `Face-ID` folder:
+
+```bash
+python3 yunnet_face_detection_version_1.py
+```
+
+### Options
+
+- `--camera`: Camera device index (default: 0)
+- `--conf-threshold`: Confidence threshold for detections; higher = fewer false positives (default: 0.5)
+- `--nms-threshold`: NMS threshold for duplicate detections (default: 0.4)
+- `--top-k`: Keep top K detections (default: 5000)
+- `--width`: Optional camera frame width (default: 640)
+- `--height`: Optional camera frame height (default: 480)
+
+### Notes
+
+- Modern DNN-based detector shipped with OpenCV.
+- Outputs facial landmarks (2 eyes, nose, 2 mouth corners) overlaid as red dots.
+- Displays per-face confidence scores.
+- Better accuracy and robustness than Haar cascades.
+- Can leverage GPU acceleration if OpenCV is built with CUDA support.
+
+### Example
+
+```bash
+python3 yunnet_face_detection_version_1.py --conf-threshold 0.6 --nms-threshold 0.3
+```
+
+---
+
+## Comparison
+
+| Feature | Haar Cascades (v0) | YuNET (v1) |
+|---------|-------------------|-----------|
+| Speed | Very fast | Fast |
+| Accuracy | Moderate | High |
+| Pose robustness | Low | High |
+| Landmarks | No | Yes (5 points) |
+| Model size | None (built-in) | ~6 MB ONNX |
+| GPU support | No | Yes (with CUDA) |
+| OpenCV version | 3.0+ | 4.8.0+ |
+
+---
+
+## General Notes
+
+- Allow camera access when prompted by your OS.
+- Press `q` or `ESC` to exit either detector.
+- For best results, use adequate lighting and frontal/near-frontal face poses.
+- Both scripts show real-time FPS and detection count overlaid on the video.
