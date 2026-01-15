@@ -1,61 +1,54 @@
 #!/usr/bin/env python3
 """Real-time face detection using YuNET (OpenCV DNN).
 
-YuNET is a lightweight face detector that's faster and more accurate than Haar cascades.
-Requires: opencv-python >= 4.8.0
-
 Usage:
-  python3 yunnet_face_detection_version_1.py
-  python3 yunnet_face_detection_version_1.py --camera 1 --conf-threshold 0.6
+  python3 face_detection_version_1.py
+  python3 face_detection_version_1.py --camera 1 --scale 0.5 --conf-threshold 0.9
 """
 import argparse
+import os
 import time
+import urllib.request
 import cv2
 import numpy as np
+
+
+def download_model(model_path, url):
+    """Download the model if it doesn't exist."""
+    if not os.path.exists(model_path):
+        print(f"Downloading model from {url}...")
+        urllib.request.urlretrieve(url, model_path)
+        print("Model downloaded.")
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Real-time face detection with YuNET")
     p.add_argument("--camera", type=int, default=0, help="Camera device index (default: 0)")
-    p.add_argument("--conf-threshold", type=float, default=0.5,
-                   help="Confidence threshold for detections (default: 0.5)")
-    p.add_argument("--nms-threshold", type=float, default=0.4,
-                   help="NMS threshold for duplicate detections (default: 0.4)")
-    p.add_argument("--width", type=int, default=640, help="Optional camera frame width")
-    p.add_argument("--height", type=int, default=480, help="Optional camera frame height")
-    p.add_argument("--top-k", type=int, default=5000, help="Keep top K detections (default: 5000)")
+    p.add_argument("--model", type=str, default="face_detection_yunet_2023mar.onnx",
+                   help="YuNET model filename")
+    p.add_argument("--scale", type=float, default=1.0, help="Scale factor for input image")
+    p.add_argument("--conf-threshold", type=float, default=0.9, help="Confidence threshold for detection")
+    p.add_argument("--nms-threshold", type=float, default=0.3, help="NMS threshold")
+    p.add_argument("--top-k", type=int, default=5000, help="Keep top k detections")
+    p.add_argument("--width", type=int, default=160, help="Camera frame width")
+    p.add_argument("--height", type=int, default=120, help="Camera frame height")
     return p.parse_args()
-
-
-def get_yunnet_model_path():
-    """Get the path to YuNET model shipped with OpenCV."""
-    import sys
-    opencv_data_path = cv2.data.haarcascades.replace('haarcascades', 'dnn')
-    model_path = opencv_data_path + 'face_detection_yunet_2023mar.onnx'
-    return model_path
 
 
 def main():
     args = parse_args()
 
-    # Load YuNET model
-    model_path = get_yunnet_model_path()
-    print(f"Loading YuNET model from: {model_path}")
-    face_detector = cv2.FaceDetectorYN.create(
-        model_path,
-        "",
-        input_size=(320, 320),
-        score_threshold=args.conf_threshold,
-        nms_threshold=args.nms_threshold,
-        top_k=args.top_k,
-        keep_top_k=5000
-    )
+    # Model URL
+    model_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+    model_path = args.model
 
-    if face_detector is None:
-        raise SystemExit(
-            f"Failed to load YuNET model. Ensure OpenCV >= 4.8.0 is installed and model path is correct.\n"
-            f"Expected path: {model_path}"
-        )
+    # Download model if not present
+    download_model(model_path, model_url)
+
+    # Load the model
+    detector = cv2.FaceDetectorYN.create(model_path, "", (args.width, args.height), args.conf_threshold, args.nms_threshold, args.top_k)
+    if detector is None:
+        raise SystemExit("Failed to create FaceDetectorYN")
 
     # Open camera
     cap = cv2.VideoCapture(args.camera)
@@ -65,68 +58,60 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
 
-    fps = 0.0
-    prev = time.time()
+    prev_time = time.time()
 
-    print("YuNET face detector initialized. Press 'q' or ESC to quit.")
+    print("Press 'q' to quit.")
 
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to read frame from camera")
-                break
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to read frame")
+            break
 
-            # Set input size to match frame
-            h, w = frame.shape[:2]
-            face_detector.setInputSize((w, h))
+        current_time = time.time()
+        fps = 1 / (current_time - prev_time) if current_time - prev_time > 0 else 0
+        prev_time = current_time
 
-            # Detect faces
-            start_detect = time.time()
-            _, faces = face_detector.detect(frame)
-            detect_time = time.time() - start_detect
+        # Resize frame to model input size
+        input_frame = cv2.resize(frame, (args.width, args.height))
 
-            # Draw detections
-            if faces is not None and len(faces) > 0:
-                for face in faces:
-                    # face is [x, y, w, h, conf, l_eye_x, l_eye_y, r_eye_x, r_eye_y,
-                    #         nose_x, nose_y, l_mouth_x, l_mouth_y, r_mouth_x, r_mouth_y]
-                    x, y, w, h = int(face[0]), int(face[1]), int(face[2]), int(face[3])
-                    conf = face[4]
+        # Detect faces
+        faces = detector.detect(input_frame)
 
-                    # Draw bounding box
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        # Scale factors
+        scale_x = frame.shape[1] / args.width
+        scale_y = frame.shape[0] / args.height
 
-                    # Draw confidence score
-                    cv2.putText(frame, f"{conf:.2f}", (x, y - 5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        num_faces = len(faces[1]) if faces[1] is not None else 0
 
-                    # Draw landmarks (eyes, nose, mouth)
-                    landmarks = face[5:].reshape(-1, 2).astype(int)
-                    for landmark in landmarks:
-                        cv2.circle(frame, tuple(landmark), 2, (0, 0, 255), -1)
+        if faces[1] is not None:
+            for face in faces[1]:
+                # Draw bounding box
+                bbox = face[:4].astype(int)
+                bbox[0] = int(bbox[0] * scale_x)
+                bbox[1] = int(bbox[1] * scale_y)
+                bbox[2] = int(bbox[2] * scale_x)
+                bbox[3] = int(bbox[3] * scale_y)
+                cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), (0, 255, 0), 2)
 
-            # FPS calculation
-            now = time.time()
-            dt = now - prev
-            prev = now
-            if dt > 0:
-                fps = 0.9 * fps + 0.1 * (1.0 / dt)
+                # Draw landmarks
+                landmarks = face[4:14].reshape(5, 2).astype(int)
+                for lm in landmarks:
+                    lm[0] = int(lm[0] * scale_x)
+                    lm[1] = int(lm[1] * scale_y)
+                    cv2.circle(frame, tuple(lm), 2, (255, 0, 0), -1)
 
-            # Overlay statistics
-            num_faces = len(faces) if faces is not None else 0
-            cv2.putText(frame, f"Faces: {num_faces}  FPS: {fps:.1f}  Detect: {detect_time*1000:.1f}ms",
-                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        # Display counter
+        text = f"Faces: {num_faces} FPS: {fps:.2f}"
+        cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-            cv2.imshow("YuNET Face Detection (press q to quit)", frame)
+        cv2.imshow("Face Detection with YuNET", frame)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q") or key == 27:
-                break
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
